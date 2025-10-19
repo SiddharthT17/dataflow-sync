@@ -14,6 +14,7 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  CircularProgress,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import ConnectorCard from "../components/ConnectorCard";
@@ -24,7 +25,16 @@ const ConnectorSetup = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("All");
   const [openModal, setOpenModal] = useState(false);
-  const [newConnector, setNewConnector] = useState({ name: "", type: "" });
+  const [loading, setLoading] = useState(false);
+  const [newConnection, setNewConnection] = useState({
+    sourceType: "MYSQL",
+    targetType: "SNOWFLAKE",
+    host: "127.0.0.1",
+    port: "3306",
+    database: "radianreporting",
+    username: "root",
+    password: "",
+  });
 
   useEffect(() => {
     const fetchConnectors = async () => {
@@ -40,7 +50,7 @@ const ConnectorSetup = () => {
     fetchConnectors();
   }, []);
 
-  // 🔍 Search + Filter logic
+  // 🔍 Filter logic
   useEffect(() => {
     let result = connectors;
 
@@ -59,20 +69,39 @@ const ConnectorSetup = () => {
     setFilteredConnectors(result);
   }, [searchTerm, filterStatus, connectors]);
 
-  // ➕ Modal handlers
-  const handleAddConnector = () => {
-    if (!newConnector.name.trim()) return;
-    setConnectors([
-      ...connectors,
-      {
+  // ➕ Connect handler
+  const handleConnect = async () => {
+    setLoading(true);
+    try {
+      const res = await axios.post(
+        "http://localhost:8080/v0/api/database/connection",
+        {
+          host: newConnection.host,
+          port: newConnection.port,
+          database: newConnection.database,
+          username: newConnection.username,
+          password: newConnection.password,
+          databaseType: newConnection.sourceType,
+        }
+      );
+
+      const success = res.data === true;
+
+      const newConn = {
         id: connectors.length + 1,
-        name: newConnector.name,
-        connected: false,
-        type: newConnector.type || "Custom",
-      },
-    ]);
-    setNewConnector({ name: "", type: "" });
-    setOpenModal(false);
+        name: `${newConnection.sourceType} → ${newConnection.targetType}`,
+        connected: success,
+        type: "Database",
+      };
+
+      setConnectors([...connectors, newConn]);
+      setOpenModal(false);
+    } catch (err) {
+      console.error("Connection failed:", err);
+      alert("Failed to connect — backend unavailable.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -82,15 +111,7 @@ const ConnectorSetup = () => {
       </Typography>
 
       {/* 🔍 Filter Bar */}
-      <Box
-        sx={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 2,
-          mb: 4,
-          alignItems: "center",
-        }}
-      >
+      <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2, mb: 4, alignItems: "center" }}>
         <TextField
           label="Search connectors..."
           variant="outlined"
@@ -118,7 +139,7 @@ const ConnectorSetup = () => {
           startIcon={<AddIcon />}
           onClick={() => setOpenModal(true)}
         >
-          Add Connector
+          Add Database Connector
         </Button>
       </Box>
 
@@ -131,34 +152,87 @@ const ConnectorSetup = () => {
         ))}
       </Grid>
 
-      {/* ➕ Add Connector Modal */}
-      <Dialog open={openModal} onClose={() => setOpenModal(false)}>
-        <DialogTitle>Add New Connector</DialogTitle>
+      {/* ➕ Connect Modal */}
+      <Dialog open={openModal} onClose={() => setOpenModal(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Connect Source to Target</DialogTitle>
         <DialogContent>
+          <Box display="flex" gap={2} mt={1}>
+            <FormControl fullWidth>
+              <InputLabel>Source</InputLabel>
+              <Select
+                label="Source"
+                value={newConnection.sourceType}
+                onChange={(e) =>
+                  setNewConnection({ ...newConnection, sourceType: e.target.value })
+                }
+              >
+                <MenuItem value="MYSQL">MySQL</MenuItem>
+                <MenuItem value="ORACLE">Oracle</MenuItem>
+              </Select>
+            </FormControl>
+
+            <FormControl fullWidth>
+              <InputLabel>Target</InputLabel>
+              <Select
+                label="Target"
+                value={newConnection.targetType}
+                onChange={(e) =>
+                  setNewConnection({ ...newConnection, targetType: e.target.value })
+                }
+              >
+                <MenuItem value="SNOWFLAKE">Snowflake</MenuItem>
+              </Select>
+            </FormControl>
+          </Box>
+
+          {/* Connection Fields */}
           <TextField
-            autoFocus
             margin="dense"
-            label="Connector Name"
+            label="Host"
             fullWidth
-            value={newConnector.name}
-            onChange={(e) =>
-              setNewConnector({ ...newConnector, name: e.target.value })
-            }
+            value={newConnection.host}
+            onChange={(e) => setNewConnection({ ...newConnection, host: e.target.value })}
           />
           <TextField
             margin="dense"
-            label="Connector Type"
+            label="Port"
             fullWidth
-            value={newConnector.type}
-            onChange={(e) =>
-              setNewConnector({ ...newConnector, type: e.target.value })
-            }
+            value={newConnection.port}
+            onChange={(e) => setNewConnection({ ...newConnection, port: e.target.value })}
+          />
+          <TextField
+            margin="dense"
+            label="Database"
+            fullWidth
+            value={newConnection.database}
+            onChange={(e) => setNewConnection({ ...newConnection, database: e.target.value })}
+          />
+          <TextField
+            margin="dense"
+            label="Username"
+            fullWidth
+            value={newConnection.username}
+            onChange={(e) => setNewConnection({ ...newConnection, username: e.target.value })}
+          />
+          <TextField
+            margin="dense"
+            label="Password"
+            type="password"
+            fullWidth
+            value={newConnection.password}
+            onChange={(e) => setNewConnection({ ...newConnection, password: e.target.value })}
           />
         </DialogContent>
+
         <DialogActions>
           <Button onClick={() => setOpenModal(false)}>Cancel</Button>
-          <Button onClick={handleAddConnector} variant="contained">
-            Add
+          <Button
+            onClick={handleConnect}
+            variant="contained"
+            disabled={loading}
+            startIcon={loading ? <CircularProgress size={18} /> : null}
+          >
+            {loading ? "Connecting..." : "Connect"}
           </Button>
         </DialogActions>
       </Dialog>
